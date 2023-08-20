@@ -42,6 +42,7 @@
 //*****************************************************************************
 #define _XTAL_FREQ 8000000
 #define LED_PIN PORTAbits.RA0 // PIN para el motor DC
+#define SERVO PORTAbits.RA1 // PIN para el motor DC
 
 char timeStr[9];//alamcena la hora como una cadena 
 //variables para las fechas y tiempo
@@ -51,6 +52,7 @@ uint8_t minuto; //variable de minutos
 uint8_t hora; //variable de horas
 uint8_t temporal; //variable temporal
 uint8_t lastActionMinute = 0xFF; // Valor inicial inválido
+uint8_t infrarrojo; // variale para guardar  el valor del infrerrojo en ese moemto 
 
 
 //*****************************************************************************
@@ -76,8 +78,10 @@ void main(void) {
 
     
     while(1){
-        
-        // Lee la hora actual
+       
+////////////////////////////////////////////////////////////////
+        //----------- RTC, Lee la hora actual-----------------------
+///////////////////////////////////////////////////////////////
         Read_Time(&segundo, &minuto, &hora);
         
         //confgurar posicion del cursor
@@ -89,13 +93,10 @@ void main(void) {
         if (lastActionMinute != 0xFF && (minuto - lastActionMinute == 2 || minuto - lastActionMinute == -58)) {
             // Enciende el LED
             LED_PIN = 1;
-
             // Espera 3 segundos
             __delay_ms(3000);
-
             // Apaga el LED
             LED_PIN = 0;
-
             // Almacena los minutos actuales como la última vez que se realizó la acción
             lastActionMinute = minuto;
         }
@@ -106,6 +107,30 @@ void main(void) {
         }
         // Espera un poco antes de la próxima lectura (puedes ajustar este valor)
         __delay_ms(1000);
+        
+///////////////////////////////////////////////////////////     
+        //---------------datos de infrarrojo-----------------
+///////////////////////////////////////////////////////////////
+        
+        I2C_Master_Start();
+        I2C_Master_Write(0x51);
+        infrarrojo = I2C_Master_Read(0);
+        I2C_Master_Stop();
+        __delay_ms(50);
+        
+        // Verifica el estado del sensor y muestra la palabra "Sirviendo" si es 1
+        if(infrarrojo == 1) {
+            Lcd_Set_Cursor(2,1); // Ajusta el cursor a la primera fila
+            Lcd_Write_String("Sirviendo");
+            SERVO = 1; // Enciende el LED
+        } else {
+            Lcd_Set_Cursor(2,1); // Ajusta el cursor a la primera fila
+            Lcd_Write_String("          "); // Borra la palabra "Sirviendo" con espacios
+            SERVO = 0; // Apaga el LED
+        }
+        
+        
+        
     }
 }
 //*****************************************************************************
@@ -114,6 +139,10 @@ void main(void) {
 void setup(void){
     ANSEL = 0;
     ANSELH = 0;
+    
+    //salida de lcd en portb 
+    //salida del motor dc en porta0
+    //salida del servo en porta1
     TRISA = 0;
     TRISB = 0;
     TRISD = 0;
