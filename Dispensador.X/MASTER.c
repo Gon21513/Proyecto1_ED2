@@ -32,7 +32,7 @@
 //*****************************************************************************
 #include <stdint.h>
 #include <stdio.h>
-#include <pic16f887.h>
+//#include <pic16f887.h>
 #include "I2C.h"
 #include <xc.h>
 #include "DS3231.h"
@@ -42,7 +42,10 @@
 //*****************************************************************************
 #define _XTAL_FREQ 8000000
 #define LED_PIN PORTAbits.RA0 // PIN para el motor DC
-#define SERVO PORTAbits.RA1 // PIN para el motor DC
+#define LEDSERVO PORTAbits.RA1 // PIN para el motor DC
+#define pwmmin 100 // Valor correspondiente a 0 grados (1 ms)
+#define pwmmax 225 // Valor correspondiente a 45 grados (1.5 ms)
+
 
 char timeStr[9];//alamcena la hora como una cadena 
 //variables para las fechas y tiempo
@@ -63,6 +66,8 @@ void setup(void);
 void Set_sec(uint8_t sec); //Función para setear segundos
 void Set_min(uint8_t min); //Función para setear minutos
 void Set_hour(uint8_t hour); //Función para setear horas
+void setupPWM(void); //para el servootor
+
 
 //*****************************************************************************
 // Main
@@ -73,6 +78,8 @@ void main(void) {
     Set_sec(0); //Inicializa los segundos a 0
     Set_min(0); //Inicializa los minutos a 0
     Set_hour(11); //Inicializa las horas a 12
+    setupPWM(); //incia el pwm para el servo 
+
     LED_PIN = 0; // Apaga el LED inicialmente
 
 
@@ -122,11 +129,15 @@ void main(void) {
         if(infrarrojo == 1) {
             Lcd_Set_Cursor(2,1); // Ajusta el cursor a la primera fila
             Lcd_Write_String("Sirviendo");
-            SERVO = 1; // Enciende el LED
+            LEDSERVO = 1; // Enciende el LED
+            CCPR1L = (uint8_t)(pwmmax >> 2); // Mueve el servo a 45 grados
+            CCP1CONbits.DC1B = pwmmax & 0b11; // Parte baja del ciclo de trabajo    
         } else {
             Lcd_Set_Cursor(2,1); // Ajusta el cursor a la primera fila
             Lcd_Write_String("          "); // Borra la palabra "Sirviendo" con espacios
-            SERVO = 0; // Apaga el LED
+            LEDSERVO = 0; // Apaga el LED
+            CCPR1L = (uint8_t)(pwmmin >> 2); // Mueve el servo a 0 grados
+            CCP1CONbits.DC1B = pwmmin & 0b11; // Parte baja del ciclo de trabajo
         }
         
         
@@ -148,7 +159,7 @@ void setup(void){
     TRISD = 0;
     
     PORTA = 0;
-    //PORTC = 0;
+    PORTC = 0;//  no estaba
     PORTB = 0;
     PORTD = 0;
     
@@ -157,4 +168,36 @@ void setup(void){
     //// --------------- Oscilador --------------- 
     OSCCONbits.IRCF = 0b111; // 8 MHz
     OSCCONbits.SCS = 1; // Seleccionar oscilador interno
+    
+    
+    
+   //---------------Interrupciones
+    
+    INTCONbits.GIE = 1; // habilitar interrupciones globales
+    INTCONbits.PEIE = 1; // habilitar interrupciones perifericas
+}
+
+
+//-------setup de PWM-------------------
+void setupPWM(void) {
+    TRISCbits.TRISC2 = 1; // CCP1 como entrada
+
+    PR2 = 155; // Periodo de 4ms en el TMR2
+
+    // Configuración de CCP1
+    CCP1CON = 0; // Apaga CCP1 inicialmente
+    CCP1CONbits.P1M = 0; // Modo de single output
+    CCP1CONbits.CCP1M = 0b1100; // Modo PWM para CCP1
+
+    CCPR1L = pwmmin >> 2; // Asigna los 8 bits más significativos a CCPR1L
+    CCP1CONbits.DC1B = pwmmin & 0b11; // Asigna a DC1B los 2 bits menos significativos
+
+    PIR1bits.TMR2IF = 0; // Limpia la bandera del TMR2
+    T2CONbits.T2CKPS = 0b11; // Prescaler 16
+    T2CONbits.TMR2ON = 1; // Enciende el TMR2
+
+    while (!PIR1bits.TMR2IF); // Ciclo de espera
+    PIR1bits.TMR2IF = 0; // Limpia la bandera del TMR2
+
+    TRISCbits.TRISC2 = 0; // Habilita la salida en RC1 (para el servo)
 }
