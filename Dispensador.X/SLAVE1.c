@@ -107,7 +107,7 @@ void main(void) {
    // return;
 }
 //*****************************************************************************
-// Funci?n de Inicializaci?n
+// Funcion de Inicializacion
 //*****************************************************************************
 void setup(void){
     ANSEL = 0; // Solo AN0 es analógico, el resto son digitales
@@ -139,3 +139,7 @@ void setup(void){
     
     
 }
+
+
+
+

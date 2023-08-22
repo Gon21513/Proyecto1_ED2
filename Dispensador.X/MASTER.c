@@ -41,11 +41,11 @@
 // Definici?n de variables
 //*****************************************************************************
 #define _XTAL_FREQ 8000000
-#define LED_PIN PORTAbits.RA0 // PIN para el motor DC
-#define LEDSERVO PORTAbits.RA1 // PIN para el motor DC
-#define pwmmin 100 // Valor correspondiente a 0 grados (1 ms)
-#define pwmmax 225 // Valor correspondiente a 45 grados (1.5 ms)
+#define MDC PORTAbits.RA0 // PIN para el motor DC
+#define SERVO_PIN PORTCbits.RC2 //para el motor DC
 
+#define pwm0 125 // valor para 0 grados (1.5 ms)
+#define pwm45 300 // valor para 45 grados  (2.25 ms)
 
 char timeStr[9];//alamcena la hora como una cadena 
 //variables para las fechas y tiempo
@@ -56,6 +56,7 @@ uint8_t hora; //variable de horas
 uint8_t temporal; //variable temporal
 uint8_t lastActionMinute = 0xFF; // Valor inicial inválido
 uint8_t infrarrojo; // variale para guardar  el valor del infrerrojo en ese moemto 
+uint8_t counter = 0;
 
 
 //*****************************************************************************
@@ -66,7 +67,8 @@ void setup(void);
 void Set_sec(uint8_t sec); //Función para setear segundos
 void Set_min(uint8_t min); //Función para setear minutos
 void Set_hour(uint8_t hour); //Función para setear horas
-void setupPWM(void); //para el servootor
+void moveServo(unsigned short pulso);//funcion para recibir el pulso y mover servo
+
 
 
 //*****************************************************************************
@@ -78,9 +80,11 @@ void main(void) {
     Set_sec(0); //Inicializa los segundos a 0
     Set_min(0); //Inicializa los minutos a 0
     Set_hour(11); //Inicializa las horas a 12
-    setupPWM(); //incia el pwm para el servo 
+    //setupPWM(); //incia el pwm para el servo 
+    //tmr0_setup(); //configuraciones de tmr0
 
-    LED_PIN = 0; // Apaga el LED inicialmente
+
+    MDC = 0; // Apaga el LED inicialmente
 
 
     
@@ -99,11 +103,11 @@ void main(void) {
         // Comprueba si han pasado exactamente dos minutos desde la última acción
         if (lastActionMinute != 0xFF && (minuto - lastActionMinute == 2 || minuto - lastActionMinute == -58)) {
             // Enciende el LED
-            LED_PIN = 1;
+            MDC = 1;
             // Espera 3 segundos
-            __delay_ms(3000);
+            __delay_ms(2000);
             // Apaga el LED
-            LED_PIN = 0;
+            MDC = 0;
             // Almacena los minutos actuales como la última vez que se realizó la acción
             lastActionMinute = minuto;
         }
@@ -112,8 +116,8 @@ void main(void) {
         if (lastActionMinute == 0xFF) {
             lastActionMinute = minuto;
         }
-        // Espera un poco antes de la próxima lectura (puedes ajustar este valor)
-        __delay_ms(1000);
+        // Espera un poco antes de la próxima lectura 
+        __delay_ms(700);
         
 ///////////////////////////////////////////////////////////     
         //---------------datos de infrarrojo-----------------
@@ -127,17 +131,18 @@ void main(void) {
         
         // Verifica el estado del sensor y muestra la palabra "Sirviendo" si es 1
         if(infrarrojo == 1) {
+
             Lcd_Set_Cursor(2,1); // Ajusta el cursor a la primera fila
-            Lcd_Write_String("Sirviendo");
-            LEDSERVO = 1; // Enciende el LED
-            CCPR1L = (uint8_t)(pwmmax >> 2); // Mueve el servo a 45 grados
-            CCP1CONbits.DC1B = pwmmax & 0b11; // Parte baja del ciclo de trabajo    
+            Lcd_Write_String("WAT");
+            moveServo(pwm45); //mover a 45 grados para abrir agua
+
+               
         } else {
+
             Lcd_Set_Cursor(2,1); // Ajusta el cursor a la primera fila
-            Lcd_Write_String("          "); // Borra la palabra "Sirviendo" con espacios
-            LEDSERVO = 0; // Apaga el LED
-            CCPR1L = (uint8_t)(pwmmin >> 2); // Mueve el servo a 0 grados
-            CCP1CONbits.DC1B = pwmmin & 0b11; // Parte baja del ciclo de trabajo
+            Lcd_Write_String("   "); // Borra la palabra "Sirviendo" con espacios
+            moveServo(pwm0); //mover a 0 grados para abrir agua
+
         }
         
         
@@ -153,9 +158,10 @@ void setup(void){
     
     //salida de lcd en portb 
     //salida del motor dc en porta0
-    //salida del servo en porta1
+    //salida del servo en portc2
     TRISA = 0;
     TRISB = 0;
+    TRISCbits.TRISC2 = 0; // salida de servo 
     TRISD = 0;
     
     PORTA = 0;
@@ -169,35 +175,29 @@ void setup(void){
     OSCCONbits.IRCF = 0b111; // 8 MHz
     OSCCONbits.SCS = 1; // Seleccionar oscilador interno
     
-    
-    
-   //---------------Interrupciones
-    
-    INTCONbits.GIE = 1; // habilitar interrupciones globales
-    INTCONbits.PEIE = 1; // habilitar interrupciones perifericas
+
 }
 
 
-//-------setup de PWM-------------------
-void setupPWM(void) {
-    TRISCbits.TRISC2 = 1; // CCP1 como entrada
+//funcion e delay para mover el servo
 
-    PR2 = 155; // Periodo de 4ms en el TMR2
-
-    // Configuración de CCP1
-    CCP1CON = 0; // Apaga CCP1 inicialmente
-    CCP1CONbits.P1M = 0; // Modo de single output
-    CCP1CONbits.CCP1M = 0b1100; // Modo PWM para CCP1
-
-    CCPR1L = pwmmin >> 2; // Asigna los 8 bits más significativos a CCPR1L
-    CCP1CONbits.DC1B = pwmmin & 0b11; // Asigna a DC1B los 2 bits menos significativos
-
-    PIR1bits.TMR2IF = 0; // Limpia la bandera del TMR2
-    T2CONbits.T2CKPS = 0b11; // Prescaler 16
-    T2CONbits.TMR2ON = 1; // Enciende el TMR2
-
-    while (!PIR1bits.TMR2IF); // Ciclo de espera
-    PIR1bits.TMR2IF = 0; // Limpia la bandera del TMR2
-
-    TRISCbits.TRISC2 = 0; // Habilita la salida en RC1 (para el servo)
+void moveServo(unsigned short pulso) {
+    // Repetir 10 veces en lugar de 50 para reducir el retardo
+    for (int i = 0; i < 10; i++) {
+        SERVO_PIN = 1; // Encender el pin de control del servo (inicio del pulso)
+        
+        // Retardo durante la duración del pulso 
+        // Esto determina el ángulo del servo
+        for (int j = 0; j < pulso; j++) {
+            __delay_us(1);
+        }
+        
+        SERVO_PIN = 0; // Apagar el pin de control del servo, fin del pulso
+        
+        // Retardo durante el tiempo restante para completar el período de 20ms
+        // (2000 - pulso) microsegundos
+        for (int j = 0; j < (2000 - pulso); j++) {
+            __delay_us(1);
+        }
+    }
 }
