@@ -1,4 +1,10 @@
-//Luis Pedro Gonzalez 21513
+/* 
+ * File: LCD.h  
+ * Se utilizó y se adaptaron las librerías de Ligo George 
+ * de la página www.electrosome.com
+ * Enlace: https://electrosome.com/lcd-pic-mplab-xc8/
+ * Revision history: 
+ */
 
 // This is a guard condition so that contents of this file are not included
 // more than once.  
@@ -10,27 +16,43 @@
 #endif
 
 #ifndef RS
-#define RS PORTDbits.RD6
+#define RS PORTBbits.RB0
 #endif
 
 #ifndef EN
-#define EN PORTDbits.RD7
+#define EN PORTBbits.RB1
+#endif
+
+#ifndef D0
+#define D0 PORTDbits.RD0
+#endif
+
+#ifndef D1
+#define D1 PORTDbits.RD1
+#endif
+
+#ifndef D2
+#define D2 PORTDbits.RD2
+#endif
+
+#ifndef D3
+#define D3 PORTDbits.RD3
 #endif
 
 #ifndef D4
-#define D4 PORTBbits.RB4
+#define D4 PORTDbits.RD4
 #endif
 
 #ifndef D5
-#define D5 PORTBbits.RB5
+#define D5 PORTDbits.RD5
 #endif
 
 #ifndef D6
-#define D6 PORTBbits.RB6
+#define D6 PORTDbits.RD6
 #endif
 
 #ifndef D7
-#define D7 PORTBbits.RB7
+#define D7 PORTDbits.RD7
 #endif
 
 #include <xc.h> // include processor files - each processor file is guarded.  

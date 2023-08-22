@@ -1,6 +1,6 @@
 /* 
  * File:   dispensador.c
- * Author: Luis Pedro Gonzalez 21513
+ * Authors: Luis Pedro Gonzalez 21513 - Gabriel Carrera 21216
  *
  * Created on 06 de agosto de 2023, 04:09 PM
  */
@@ -37,6 +37,8 @@
 #include <xc.h>
 #include "DS3231.h"
 #include "LCD.h"
+#include "float_str.h" //Funcion para convertir cadena a texto
+
 //*****************************************************************************
 // Definici?n de variables
 //*****************************************************************************
@@ -48,6 +50,9 @@
 #define pwm45 300 // valor para 45 grados  (2.25 ms)
 
 char timeStr[9];//alamcena la hora como una cadena 
+char buffer[30]; //Arreglo para guardar valores de distancia
+char buffer2[48]; //Arreglo para guardar valores de temperatura
+
 //variables para las fechas y tiempo
 
 uint8_t segundo; //variable de segundos
@@ -57,6 +62,8 @@ uint8_t temporal; //variable temporal
 uint8_t lastActionMinute = 0xFF; // Valor inicial inválido
 uint8_t infrarrojo; // variale para guardar  el valor del infrerrojo en ese moemto 
 uint8_t counter = 0;
+uint8_t distance; //Variable para lectura de la distancia del slave 2 
+float temperatura; //Variable para guardar valor de temperatura
 
 
 //*****************************************************************************
@@ -68,7 +75,9 @@ void Set_sec(uint8_t sec); //Función para setear segundos
 void Set_min(uint8_t min); //Función para setear minutos
 void Set_hour(uint8_t hour); //Función para setear horas
 void moveServo(unsigned short pulso);//funcion para recibir el pulso y mover servo
-
+void AHT10_Init(void); // Inicializar el sensor AHT10
+void AHT10_Soft_Reset(void); // Función para resetear el sensor de temperatura
+void AHT10_Read(void); // Función para leer y desplegar temperatura
 
 
 //*****************************************************************************
@@ -86,7 +95,8 @@ void main(void) {
 
     MDC = 0; // Apaga el LED inicialmente
 
-
+    AHT10_Soft_Reset(); //Resetear el sensor de temperatura
+    AHT10_Init(); //Inicar el sensor de temperatura
     
     while(1){
        
@@ -94,6 +104,7 @@ void main(void) {
         //----------- RTC, Lee la hora actual-----------------------
 ///////////////////////////////////////////////////////////////
         Read_Time(&segundo, &minuto, &hora);
+	AHT10_Read(); //Tomar la temperatura
         
         //confgurar posicion del cursor
         Lcd_Set_Cursor(1,1);
@@ -144,8 +155,27 @@ void main(void) {
             moveServo(pwm0); //mover a 0 grados para abrir agua
 
         }
+
+	// --------------- Lectura de distancia del Slave 2 ---------------
         
+        I2C_Master_Start();
+        I2C_Master_Write(0xB1);
+        distance = I2C_Master_Read(0);
+        I2C_Master_Stop();
+        __delay_ms(50);
         
+        floattostr(distance, buffer, 2); //Convertir distancia a cadena
+        Lcd_Set_Cursor(2,5); //Setear cursor en 1,1
+        Lcd_Write_String(buffer); //Mostrar en Lcd
+        
+        // Verifica el estado del sensor y muestra la palabra "Sirviendo" si es 1
+        if (distance > 10 & distance < 50) {
+            Lcd_Set_Cursor(2,12); // Ajusta el cursor a la primera fila
+            Lcd_Write_String("ALARM");
+        } else {
+            Lcd_Set_Cursor(2,9); // Ajusta el cursor a la primera fila
+            Lcd_Write_String("          "); // Borra la palabra "Sirviendo" con espacios
+        }
         
     }
 }
@@ -200,4 +230,78 @@ void moveServo(unsigned short pulso) {
             __delay_us(1);
         }
     }
+}
+
+// --------------- Funciones para el sensor de temperatura ---------------
+
+void AHT10_Init(void){ //Función para inicializar sensor de temperatura
+    __delay_ms(40); //delay de 40ms
+    uint8_t status; //variable para status del sensor
+    I2C_Master_Start(); //Inicializar comunicación I2C
+    I2C_Master_Write(0x70); //Direccion de sensor de temperatura
+    I2C_Master_Write(0x71); //Enviar para obtener el status del sensor
+    I2C_Master_RepeatedStart(); //Repeated Start
+    I2C_Master_Write(0x71); //Leer del sensor de temperatura
+    status = I2C_Master_Read(0); //Guardar status
+    I2C_Master_Stop(); //detener comunicacion
+    
+    I2C_Master_Start(); //Inicializar comunicación I2C
+    I2C_Master_Write(0x70); //Direccion de sensor de temperatura
+    I2C_Master_Write(0xE1); //Enviar secuencia de inicialización
+    I2C_Master_Write(0x08);
+    I2C_Master_Write(0x00);
+    I2C_Master_Stop(); //detener comunicacion
+
+    __delay_ms(10); //delay de 10ms
+
+}
+
+void AHT10_Read(void){ //Función para leer
+    uint8_t data[7]; //arreglo para guardar los datos recibidos del sensor de temperatura
+    uint8_t r; //Variable para determinar si el sensor está listo para volver a realizar una medición
+    
+    I2C_Master_Start(); //Inicializar comunicación I2C
+    I2C_Master_Write(0x70); //Direccion de sensor de temperatura
+    I2C_Master_Write(0xAC); //Enviar secuencia de medición
+    I2C_Master_Write(0x33);
+    I2C_Master_Write(0x00);
+    I2C_Master_Stop(); //detener comunicacion
+    __delay_ms(80); //delay de 80ms
+    
+    I2C_Master_Start(); //Inicializar comunicación I2C
+    I2C_Master_Write(0x70); //Direccion de sensor de temperatura
+    I2C_Master_Write(0x71); //Secuencia para obtener status
+    I2C_Master_RepeatedStart(); //Repeated start
+    I2C_Master_Write(0x71); //Dirección mas bit de escritura
+    r = I2C_Master_Read(0); //Guardar status
+    I2C_Master_Stop(); //detener comunicacion
+    
+    r = r & 0b00000000; //convertir todas las variables en 0
+    while (r != 0b00000000); //Mientras sean 0 no hacer nada
+    
+    I2C_Master_Start(); //Inicializar comunicación I2C
+    I2C_Master_Write(0x71); //Enviar dirección mas bit de escritura
+    data[0] = I2C_Master_Read(1); //Guardar
+    data[1] = I2C_Master_Read(1); //Guardar status
+    data[2] = I2C_Master_Read(1); //Guardar valor de humedad 1
+    data[3] = I2C_Master_Read(1); //Guardar valor de humedad 2
+    data[4] = I2C_Master_Read(1); //Guardar valor de humedad 3 y temperatura 1
+    data[5] = I2C_Master_Read(1); //Guardar valor de temperatura 2
+    data[6] = I2C_Master_Read(0); //Guardar valor de temperatura 3
+    I2C_Master_Stop(); //detener comunicacion
+    
+	temperatura = (((uint32_t)data[3] & 0x0F) << 16) + ((uint16_t)data[4] << 8) + data[5]; //Unir datos de temperatura en uno solo
+    temperatura = ((temperatura/1048576)*200-50); //Realizar conversión indicada por el fabricante
+    floattostr(temperatura, buffer2, 2); //Convertir el dato a cadena
+    Lcd_Set_Cursor(1,12); //Setear cursor en 1,12
+    Lcd_Write_String(buffer2); //Mostrar en LCD
+}
+
+void AHT10_Soft_Reset(void){ //Función de reset 
+    __delay_ms(40); //delay de 40ms
+    I2C_Master_Start(); //Inicializar comunicación I2C
+    I2C_Master_Write(0x70); //Direccion de sensor de temperatura
+    I2C_Master_Write(0xBA);//Enviar secuencia de reset
+    I2C_Master_Stop(); //detener comunicacion
+    __delay_ms(25); //delay de 25ms
 }

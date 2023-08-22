@@ -1,8 +1,8 @@
 //slave1
 
 /*
- * File:   slave1infrerrojoe.c
- * Author: Luis Pedro Gonzalez 21513
+ * File:   slave1infrerrojo.c
+ * Authors: Luis Pedro Gonzalez 21513 - Gabriel Carrera 21216
  *
  * Created on 30 de julio de 2023, 04:50 PM
  */
@@ -107,7 +107,7 @@ void main(void) {
    // return;
 }
 //*****************************************************************************
-// Funcion de Inicializacion
+// Funci?n de Inicializaci?n
 //*****************************************************************************
 void setup(void){
     ANSEL = 0; // Solo AN0 es analógico, el resto son digitales
@@ -139,7 +139,3 @@ void setup(void){
     
     
 }
-
-
-
-
