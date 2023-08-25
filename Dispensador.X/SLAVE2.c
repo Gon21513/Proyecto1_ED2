@@ -38,7 +38,7 @@
 #define ECHO_PIN PORTDbits.RD2 //Pin de ECHO
 uint8_t z;
 uint8_t dato;
-uint8_t distance;
+float distance; // Variable para guardar la distancia leida
 
 // --------------- Prototipos ---------------
 void setup(void); // funcion de configuracion

@@ -38,6 +38,7 @@
 #include "DS3231.h"
 #include "LCD.h"
 #include "float_str.h" //Funcion para convertir cadena a texto
+#include "IOCB.h" // Libreria para antirrebotes
 
 //*****************************************************************************
 // Definici?n de variables
@@ -46,8 +47,8 @@
 #define MDC PORTAbits.RA0 // PIN para el motor DC
 #define SERVO_PIN PORTCbits.RC2 //para el motor DC
 
-#define pwm0 125 // valor para 0 grados (1.5 ms)
-#define pwm45 300 // valor para 45 grados  (2.25 ms)
+#define pwm0 45 // valor para 0 grados (1.5 ms)
+#define pwm45 190 // valor para 45 grados  (2.25 ms)
 
 char timeStr[9];//alamcena la hora como una cadena 
 char buffer[30]; //Arreglo para guardar valores de distancia
@@ -63,8 +64,10 @@ uint8_t lastActionMinute = 0xFF; // Valor inicial inválido
 uint8_t infrarrojo; // variale para guardar  el valor del infrerrojo en ese moemto 
 uint8_t counter = 0;
 uint8_t distance; //Variable para lectura de la distancia del slave 2 
-float temperatura; //Variable para guardar valor de temperatura
-
+float temperature; //Variable para guardar valor de temperatura
+uint8_t bandera = 0; //Variable para antirrebotes
+uint8_t screen = 0; //variable para selector de modos de pantalla
+uint8_t temp_int = 0; // Variable para comparar temperatura
 
 //*****************************************************************************
 // Definici?n de funciones para que se puedan colocar despu?s del main de lo 
@@ -78,6 +81,7 @@ void moveServo(unsigned short pulso);//funcion para recibir el pulso y mover ser
 void AHT10_Init(void); // Inicializar el sensor AHT10
 void AHT10_Soft_Reset(void); // Función para resetear el sensor de temperatura
 void AHT10_Read(void); // Función para leer y desplegar temperatura
+void ESP32_Write(void); // Función para enviar datos al ESP32
 
 
 //*****************************************************************************
@@ -88,38 +92,79 @@ void main(void) {
     Lcd_Init();
     Set_sec(0); //Inicializa los segundos a 0
     Set_min(0); //Inicializa los minutos a 0
-    Set_hour(11); //Inicializa las horas a 12
-    //setupPWM(); //incia el pwm para el servo 
-    //tmr0_setup(); //configuraciones de tmr0
-
+    Set_hour(12); //Inicializa las horas a 12
 
     MDC = 0; // Apaga el LED inicialmente
-
+    
+    // --------------- Sensor de temperatura ---------------
     AHT10_Soft_Reset(); //Resetear el sensor de temperatura
     AHT10_Init(); //Inicar el sensor de temperatura
     
+    screen = 0;
+    distance = 5;
+    
     while(1){
-       
+        
+        ESP32_Write(); // Enviar datos al ESP32 por i2c para adafruit
+        
+        if (screen == 0){ //Chequear el modo de LCD
+            //confgurar posicion del cursor
+            Lcd_Set_Cursor(1,1);
+            sprintf(timeStr, "%02u:%02u:%02u ", hora, minuto, segundo); //Función para pasar variables a cadena de caracteres
+            Lcd_Write_String(timeStr); //Mostrar en la LCD
+            floattostr(temperature, buffer2, 2); //Convertir el dato a cadena
+            Lcd_Set_Cursor(1,11); //Setear cursor en 1,12
+            Lcd_Write_String("T"); //Mostrar en LCD
+            Lcd_Set_Cursor(1,12); //Setear cursor en 1,12
+            Lcd_Write_String(buffer2); //Mostrar en LCD
+        }
+        else if (screen == 1){ //Chequear el modo de LCD
+            //confgurar posicion del cursor
+            Lcd_Set_Cursor(1,1);
+            Lcd_Write_String("Alerta! Favor de"); //Mostrar en la LCD
+            Lcd_Set_Cursor(2,1);
+            Lcd_Write_String("renovar agua.   "); //Mostrar en la LCD
+        }
+        else if (screen == 2){ //Chequear el modo de LCD
+            //confgurar posicion del cursor
+            Lcd_Set_Cursor(1,1);
+            Lcd_Write_String("Alerta! Favor de"); //Mostrar en la LCD
+            Lcd_Set_Cursor(2,1);
+            Lcd_Write_String("rellenar comida."); //Mostrar en la LCD
+        }
+        
+        // --------------- Lectura de temperatura ---------------
+        AHT10_Read(); //Tomar la temperatura
+        
+        // Verifica el estado del sensor y muestra la palabra "Sirviendo" si es 1
+        if (temperature > 32.6) {
+            //screen = 1;
+            Lcd_Set_Cursor(1,1);
+            Lcd_Write_String("Alerta! Favor de"); //Mostrar en la LCD
+            Lcd_Set_Cursor(2,1);
+            Lcd_Write_String("renovar agua.   "); //Mostrar en la LCD
+        } else if (temperature < 32.6) {
+            screen = 0;
+        }
+
 ////////////////////////////////////////////////////////////////
         //----------- RTC, Lee la hora actual-----------------------
 ///////////////////////////////////////////////////////////////
         Read_Time(&segundo, &minuto, &hora);
-	AHT10_Read(); //Tomar la temperatura
-        
-        //confgurar posicion del cursor
-        Lcd_Set_Cursor(1,1);
-        sprintf(timeStr, "%02u:%02u:%02u ", hora, minuto, segundo); //Función para pasar variables a cadena de caracteres
-        Lcd_Write_String(timeStr); //Mostrar en la LCD
         
         // Comprueba si han pasado exactamente dos minutos desde la última acción
         if (lastActionMinute != 0xFF && (minuto - lastActionMinute == 2 || minuto - lastActionMinute == -58)) {
             // Enciende el LED
-            MDC = 1;
+            MDC = 1; // Dispensar comida
+            Lcd_Set_Cursor(2,1);
+            Lcd_Write_String("SIRVIENDO COMIDA"); //Mostrar "COMIDA!" la LCD 
+            ESP32_Write(); // Enviar datos al ESP32 por i2c para adafruit
             // Espera 3 segundos
             __delay_ms(2000);
             // Apaga el LED
             MDC = 0;
-            // Almacena los minutos actuales como la última vez que se realizó la acción
+            Lcd_Set_Cursor(2,1);
+            Lcd_Write_String("                "); //borrar "AGUA!" la LCD 
             lastActionMinute = minuto;
         }
         
@@ -142,18 +187,13 @@ void main(void) {
         
         // Verifica el estado del sensor y muestra la palabra "Sirviendo" si es 1
         if(infrarrojo == 1) {
-
-            Lcd_Set_Cursor(2,1); // Ajusta el cursor a la primera fila
-            Lcd_Write_String("WAT");
+            Lcd_Set_Cursor(2,1);
+            Lcd_Write_String("SIRVIENDO AGUA!"); //Mostrar "AGUA!" la LCD 
             moveServo(pwm45); //mover a 45 grados para abrir agua
-
-               
         } else {
-
-            Lcd_Set_Cursor(2,1); // Ajusta el cursor a la primera fila
-            Lcd_Write_String("   "); // Borra la palabra "Sirviendo" con espacios
             moveServo(pwm0); //mover a 0 grados para abrir agua
-
+            Lcd_Set_Cursor(2,1);
+            Lcd_Write_String("                "); //Mostrar "Rellenar comida" la LCD 
         }
 
 	// --------------- Lectura de distancia del Slave 2 ---------------
@@ -164,48 +204,93 @@ void main(void) {
         I2C_Master_Stop();
         __delay_ms(50);
         
-        floattostr(distance, buffer, 2); //Convertir distancia a cadena
-        Lcd_Set_Cursor(2,5); //Setear cursor en 1,1
-        Lcd_Write_String(buffer); //Mostrar en Lcd
         
         // Verifica el estado del sensor y muestra la palabra "Sirviendo" si es 1
-        if (distance > 10 & distance < 50) {
-            Lcd_Set_Cursor(2,12); // Ajusta el cursor a la primera fila
-            Lcd_Write_String("ALARM");
-        } else {
-            Lcd_Set_Cursor(2,9); // Ajusta el cursor a la primera fila
-            Lcd_Write_String("          "); // Borra la palabra "Sirviendo" con espacios
+        if (distance > 10 && distance < 50) {
+            screen = 2;
+        } 
+        else {
+            screen = 0;
+            Lcd_Set_Cursor(1,10);
+            Lcd_Write_String("  "); //Borrar en la LCD 
         }
+         
+        
         
     }
 }
-//*****************************************************************************
-// Funci?n de Inicializaci?n
-//*****************************************************************************
+
+// --------------- Rutina de  interrupciones ---------------
+void __interrupt() isr(void){ // interrupciones
+    if (INTCONbits.RBIF == 1){ //Chequear interrupciones del puerto B
+        INTCONbits.RBIF = 0; //Limpiar bandera
+        if (PORTBbits.RB7 == 0){ //Ver si se presiono botón RB7
+            __delay_ms(2); //delay de 1 ms
+            bandera = 1; //Bandera en 1 si se presiono
+        }
+        if (PORTBbits.RB7 == 1 && bandera == 1){ // Esperar a que se suelte botón RB7
+            screen = 0; // establecer la LCD como default
+        }
+        if (PORTBbits.RB6 == 0){ //Ver si se presiono botón RB6
+            __delay_ms(2); //delay de 1 ms
+            bandera = 2; //Bandera en 2 si se presiono
+        }
+        if (PORTBbits.RB6 == 1 && bandera == 2){ // Esperar a que se suelte botón RB6
+            Lcd_Set_Cursor(1,1);
+            Lcd_Write_String("Nivel de comida:"); //Mostrar "Nivel de comida:" la LCD
+            if (distance > 50 || distance < 6){
+                Lcd_Set_Cursor(2,1);
+                Lcd_Write_String("Alto"); //Mostrar "Alto" la LCD
+            }
+            else if (distance < 11 || distance > 5){
+                Lcd_Set_Cursor(2,1);
+                Lcd_Write_String("Bajo"); //Mostrar "Bajo" la LCD
+            }
+            // Espera 3 segundos
+            __delay_ms(2000);
+        }
+    }
+}
+
+// --------------- Setup General ---------------
 void setup(void){
+    
+// --------------- Definir analogicas ---------------
     ANSEL = 0;
     ANSELH = 0;
-    
-    //salida de lcd en portb 
-    //salida del motor dc en porta0
-    //salida del servo en portc2
-    TRISA = 0;
-    TRISB = 0;
-    TRISCbits.TRISC2 = 0; // salida de servo 
+ 
+// --------------- Configurar puertos ---------------     
+    TRISA = 0; // Para PIN A0 como salida - Motor DC
+    TRISBbits.TRISB0 = 0; // PIN B0 como salida - LCD
+    TRISBbits.TRISB1 = 0; // PIN B1 como salida - LCD
+    TRISBbits.TRISB5 = 1; // PIN B5 como entrada - botones
+    TRISBbits.TRISB6 = 1; // PIN B6 como entrada - botones
+    TRISBbits.TRISB7 = 1; // PIN B7 como entrada - botones
+    TRISCbits.TRISC2 = 0; // PIN C2 como salida - Servomotor 
     TRISD = 0;
-    
+
+// --------------- Limpiar puertos ---------------        
     PORTA = 0;
-    PORTC = 0;//  no estaba
     PORTB = 0;
+    PORTC = 0;
     PORTD = 0;
     
-    I2C_Master_Init(100000);        // Inicializar Comuncaci?n I2C
-
-    //// --------------- Oscilador --------------- 
-    OSCCONbits.IRCF = 0b111; // 8 MHz
-    OSCCONbits.SCS = 1; // Seleccionar oscilador interno
+// --------------- Banderas e interrupciones --------------- 
+    INTCONbits.GIE = 1;   // Habilitar interrupciones globales
+    INTCONbits.PEIE = 1;  // Habilitar interrupciones de perifericas
+    INTCONbits.RBIE = 1;  // Habilitar interrupciones en PORTB
     
-
+    // Utilizar la libreria para habilitar pullup e IOCB de cada boton deseado
+    ioc_init(7);
+    ioc_init(6);
+    ioc_init(5);    
+    
+// --------------- Oscilador --------------- 
+    OSCCONbits.IRCF = 0b111 ; // establecerlo en 8 MHz
+    OSCCONbits.SCS = 1; // utilizar oscilador interno
+    
+    // Inicializacion del i2C con la libreria
+    I2C_Master_Init(100000); // Inicializar Comuncación I2C en 100 kHz - MAESTRO
 }
 
 
@@ -290,11 +375,11 @@ void AHT10_Read(void){ //Función para leer
     data[6] = I2C_Master_Read(0); //Guardar valor de temperatura 3
     I2C_Master_Stop(); //detener comunicacion
     
-	temperatura = (((uint32_t)data[3] & 0x0F) << 16) + ((uint16_t)data[4] << 8) + data[5]; //Unir datos de temperatura en uno solo
-    temperatura = ((temperatura/1048576)*200-50); //Realizar conversión indicada por el fabricante
-    floattostr(temperatura, buffer2, 2); //Convertir el dato a cadena
-    Lcd_Set_Cursor(1,12); //Setear cursor en 1,12
-    Lcd_Write_String(buffer2); //Mostrar en LCD
+	temperature = (((uint32_t)data[3] & 0x0F) << 16) + ((uint16_t)data[4] << 8) + data[5]; //Unir datos de temperatura en uno solo
+    temperature = ((temperature/1048576)*200-50); //Realizar conversión indicada por el fabricante
+    
+    temp_int = (((uint32_t)data[3] & 0x0F) << 16) + ((uint16_t)data[4] << 8) + data[5]; //Unir datos de temperatura en uno solo
+    temp_int = ((temperature/1048576)*200-50); //Realizar conversión indicada por el fabricante
 }
 
 void AHT10_Soft_Reset(void){ //Función de reset 
@@ -304,4 +389,15 @@ void AHT10_Soft_Reset(void){ //Función de reset
     I2C_Master_Write(0xBA);//Enviar secuencia de reset
     I2C_Master_Stop(); //detener comunicacion
     __delay_ms(25); //delay de 25ms
+}
+
+void ESP32_Write(void){ //Función para enviar datos al microcontrolador ESP32
+    I2C_Master_Start(); //Inicializar comunicación I2C
+    I2C_Master_Write(0x60); //Dirección del esclavo
+    I2C_Master_Write(MDC); //Enviar pin de motor DC para saber si está sirviendo comida
+    I2C_Master_Write(distance); //Enviar distancia
+    I2C_Master_Write(infrarrojo); //Enviar si se activa el infrarrojo
+    I2C_Master_Write(temperature); //Enviar temperatura
+    I2C_Master_Stop(); //detener comunicacion
+    __delay_ms(10); //delay de 10ms
 }
